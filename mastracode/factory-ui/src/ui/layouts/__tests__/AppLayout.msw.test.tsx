@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { Sidebar } from '@mastra/playground-ui/components/Sidebar';
 import { createMemoryRouter, Link, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
@@ -36,6 +37,7 @@ function PageA() {
   return (
     <main>
       <h1>Page A</h1>
+      <Sidebar.Trigger />
       <Link to={`/factories/${FACTORY_ID}/b`}>go-b</Link>
       <Link to={`/factories/${FACTORY_ID}/user/new/draft-1`}>go-draft-1</Link>
     </main>
@@ -107,6 +109,28 @@ describe('AppLayout', () => {
     for (const retired of ['Overview', 'Audit log', 'Supervisor']) {
       expect(within(nav).queryByRole('link', { name: retired })).not.toBeInTheDocument();
     }
+  });
+
+  it('toggles the sidebar with [ but not while typing in a field', async () => {
+    stubFactory();
+    renderApp();
+
+    await screen.findByRole('complementary', { name: 'Main sidebar' });
+    const trigger = screen.getByRole('button', { name: 'Toggle sidebar' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    await userEvent.keyboard('[[');
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+
+    await userEvent.keyboard('[[');
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
+
+    const field = document.createElement('input');
+    document.body.append(field);
+    await userEvent.type(field, '[[');
+    expect(field).toHaveValue('[');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    field.remove();
   });
 
   it('keeps the shell mounted when switching between draft sessions', async () => {
