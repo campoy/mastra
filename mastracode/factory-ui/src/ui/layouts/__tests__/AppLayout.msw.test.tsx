@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { Sidebar } from '@mastra/playground-ui/components/Sidebar';
@@ -121,6 +121,10 @@ describe('AppLayout', () => {
 
     await userEvent.keyboard('[[');
     await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+
+    // Holding the key must not flip it back on auto-repeat.
+    fireEvent.keyDown(document.body, { key: '[', repeat: true });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
     await userEvent.keyboard('[[');
     await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
