@@ -2,6 +2,7 @@ import type { RequestContext } from '@mastra/core/di';
 import { Run } from '@mastra/core/workflows';
 import type { Step, WorkflowResult, WorkflowRunStartOptions } from '@mastra/core/workflows';
 import type { Client } from '@temporalio/client';
+import type { WorkflowExecutionResult } from './transforms/temporal-workflow-runtime';
 import type { TemporalEngineType } from './types';
 import { toWorkflowType } from './utils';
 
@@ -64,13 +65,13 @@ export class TemporalRun<
           },
         ],
       });
-      const result = await handle.result();
+      const result = (await handle.result()) as WorkflowExecutionResult;
 
       return {
         status: 'success',
-        input: input as TInput,
-        result: result as TOutput,
-        state: initialState,
+        input: result.input as TInput,
+        result: result.result as TOutput,
+        state: result.state as TState,
         steps: {},
       } as WorkflowResult<TState, TInput, TOutput, TSteps>;
     } catch (error) {
