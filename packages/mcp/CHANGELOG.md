@@ -1,5 +1,90 @@
 # @mastra/mcp
 
+## 2.5.0-alpha.3
+
+### Minor Changes
+
+- Added experimental MCP Events support to `MCPServer`. Clients can now subscribe to events your server publishes, such as a ticket being created, by polling (`events/poll`) or by keeping a stream open (`events/stream`). This implements the draft SEP-3415 extension, so the API and wire format may change. ([#27324](https://github.com/mastra-ai/mastra/pull/27324))
+
+  ```ts
+  import { MCPServer, defineEvent } from '@mastra/mcp';
+  import { z } from 'zod';
+
+  const server = new MCPServer({
+    id: 'tickets',
+    name: 'Tickets',
+    version: '1.0.0',
+    tools: {},
+    events: {
+      'ticket.created': defineEvent({
+        description: 'A ticket was created',
+        inputSchema: z.object({ project: z.string().optional() }),
+        payloadSchema: z.object({ id: z.string(), project: z.string() }),
+        match: (args, data) => !args.project || data.project === args.project,
+      }),
+    },
+  });
+
+  await server.events.emit('ticket.created', { id: 't-1', project: 'web' });
+  ```
+
+  `match` filters by the arguments a client chooses. To restrict who can subscribe, add an `authorize` function: it receives the arguments and the caller's `requestContext`, and returning `false` rejects the poll or stream with `-32024`.
+
+  Event types without a `poll` function are served over push and poll from an in-memory buffer, so clients can resume from a cursor. Event types with a `poll` function are served over poll only and can't be emitted to. Emitted events only reach subscribers of the same server process. Changes to the list of event types aren't announced yet (a limitation of the MCP TypeScript SDK 2.2.0), so clients should re-run `events/list` to see them.
+
+- Added experimental webhook delivery for MCP Events. A server can now POST event occurrences to a URL the client registers, instead of the client polling or holding a stream open. This implements webhook delivery from the draft SEP-3415 extension, so the API and wire format may change. ([#27333](https://github.com/mastra-ai/mastra/pull/27333))
+
+  **Server:** set `eventsOptions.webhook` to serve `events/subscribe` for event types you emit to. Callers must be authenticated. Callback URLs must be public `https` URLs and pass a verification challenge, and every delivery is signed.
+
+  ```ts
+  const server = new MCPServer({
+    id: 'tickets',
+    name: 'Tickets',
+    version: '1.0.0',
+    tools: {},
+    events: { 'ticket.created': defineEvent({ payloadSchema: z.object({ id: z.string() }) }) },
+    eventsOptions: { webhook: {} },
+  });
+  ```
+
+  **Client:** set `webhook.url` and route it to `mcp.events.handleWebhook()`. Subscriptions then prefer webhook delivery, verify each signature, and refresh before they expire.
+
+  ```ts
+  const mcp = new MCPClient({
+    servers: { tickets: { url: new URL('https://tickets.example.com/mcp') } },
+    webhook: { url: 'https://agent.example.com/mcp/webhook' },
+  });
+
+  registerApiRoute('/mcp/webhook', {
+    method: 'POST',
+    requiresAuth: false,
+    handler: c => mcp.events.handleWebhook(c.req.raw),
+  });
+  ```
+
+- Added experimental support for subscribing to MCP server events (SEP-3415, a draft MCP extension). Servers that advertise the `io.modelcontextprotocol/events` extension can now be listed and subscribed to with `mcp.events`. The client picks push or poll delivery, resumes from a saved cursor, drops duplicate occurrences, and reopens subscriptions after reconnects. ([#27326](https://github.com/mastra-ai/mastra/pull/27326))
+
+  ```typescript
+  const subscription = await mcp.events.subscribe(
+    'github',
+    'repo.push',
+    { repo: 'mastra-ai/mastra' },
+    { cursor: savedCursor },
+  );
+
+  for await (const event of subscription) {
+    await handlePush(event.data);
+    await saveCursor(subscription.cursor);
+  }
+  ```
+
+  This API is experimental and may change while SEP-3415 is a draft.
+
+### Patch Changes
+
+- Updated dependencies [[`a92384b`](https://github.com/mastra-ai/mastra/commit/a92384bf9093beb9071953292a936ca722370ce5), [`a8f9157`](https://github.com/mastra-ai/mastra/commit/a8f9157fafe38f5acf68e37c8874ebd192ef8e10), [`b8fe2ae`](https://github.com/mastra-ai/mastra/commit/b8fe2aec651efeaad6d607d816565453a341cdef), [`e35e335`](https://github.com/mastra-ai/mastra/commit/e35e335f19ee0c7c1e03bf247aebd24c3e041459), [`cc977b4`](https://github.com/mastra-ai/mastra/commit/cc977b4ce7def6727cdd63af3478d2b8b83daf07), [`16d8f44`](https://github.com/mastra-ai/mastra/commit/16d8f44e3a1486d7319c1baeca6115d37f6c4cea)]:
+  - @mastra/core@1.79.0-alpha.12
+
 ## 2.5.0-alpha.2
 
 ### Patch Changes

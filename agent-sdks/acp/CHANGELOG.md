@@ -1,5 +1,14 @@
 # @mastra/acp
 
+## 0.4.3-alpha.1
+
+### Patch Changes
+
+- Fixed ACP prompts hanging when the agent stops with `max_tokens`, `cancelled`, `max_turn_requests` or `refusal`. `prompt()`, `AcpAgent.generate()` and ACP tools now reject with `ACP prompt stopped before completing: <reason>`. `AcpAgent.stream()` still returns a result, but its `text` promise rejects and reading `fullStream` errors with the same message. Reading only `fullStream` no longer leaves an unhandled rejection. ([#27927](https://github.com/mastra-ai/mastra/pull/27927))
+
+- Updated dependencies [[`a92384b`](https://github.com/mastra-ai/mastra/commit/a92384bf9093beb9071953292a936ca722370ce5), [`a8f9157`](https://github.com/mastra-ai/mastra/commit/a8f9157fafe38f5acf68e37c8874ebd192ef8e10), [`b8fe2ae`](https://github.com/mastra-ai/mastra/commit/b8fe2aec651efeaad6d607d816565453a341cdef), [`e35e335`](https://github.com/mastra-ai/mastra/commit/e35e335f19ee0c7c1e03bf247aebd24c3e041459), [`cc977b4`](https://github.com/mastra-ai/mastra/commit/cc977b4ce7def6727cdd63af3478d2b8b83daf07), [`16d8f44`](https://github.com/mastra-ai/mastra/commit/16d8f44e3a1486d7319c1baeca6115d37f6c4cea)]:
+  - @mastra/core@1.79.0-alpha.12
+
 ## 0.4.3-alpha.0
 
 ### Patch Changes
