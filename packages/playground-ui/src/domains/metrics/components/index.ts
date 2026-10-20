@@ -16,3 +16,6 @@ export { UsageCard, type UsageCardProps } from './usage-card';
 export { ScoresCard } from './scores-card';
 export { TraceLatencyCard, type TraceLatencyCardProps } from './trace-latency-card';
 export { TopEntitiesCard, type TopEntitiesCardProps } from './top-entities-card';
+export { TraceBreakdownCard, type TraceBreakdownCardProps } from './trace-breakdown-card';
+export { DistinctUsersCard, type DistinctUsersCardProps } from './distinct-users-card';
+export { CostCoverageCard, type CostCoverageCardProps } from './cost-coverage-card';

@@ -7,6 +7,8 @@ import { PermissionDenied } from '@mastra/playground-ui/domains/auth/components/
 import { SessionExpired } from '@mastra/playground-ui/domains/auth/components/session-expired';
 import {
   AgentRunsCard,
+  CostCoverageCard,
+  DistinctUsersCard,
   FailureRateCard,
   LatencyCard,
   MetricsGrid,
@@ -14,6 +16,7 @@ import {
   ScoresCard,
   TokenUsageCard,
   TopEntitiesCard,
+  TraceBreakdownCard,
   TraceLatencyCard,
   TraceVolumeCard,
   UsageCard,
@@ -287,6 +290,17 @@ function MetricsCards() {
         </MetricsGrid.Item>
         <MetricsGrid.Item>
           <TopEntitiesCard onEntityClick={openTraces} />
+        </MetricsGrid.Item>
+      </MetricsGrid>
+      <MetricsGrid columns={3}>
+        <MetricsGrid.Item>
+          <TraceBreakdownCard onEnvironmentClick={openTraces} />
+        </MetricsGrid.Item>
+        <MetricsGrid.Item>
+          <DistinctUsersCard onTimeRangeClick={openTraces} />
+        </MetricsGrid.Item>
+        <MetricsGrid.Item>
+          <CostCoverageCard onTimeRangeClick={openTraces} />
         </MetricsGrid.Item>
       </MetricsGrid>
       <ScoresCard />

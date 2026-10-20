@@ -116,3 +116,89 @@ export const topEntitiesFixture: AggregateTracesResponse = {
   ],
   truncated: false,
 };
+
+/** Breakdown by environment: production is busiest; one row has no environment set. */
+export const environmentBreakdownFixture: AggregateTracesResponse = {
+  rows: [
+    {
+      dimensions: { environment: 'production' },
+      measures: { count: 400, errorRate: 0.05, 'cost.sum': 12.5 },
+      cost: { coverage: 1, unit: 'usd' },
+    },
+    {
+      dimensions: { environment: 'staging' },
+      measures: { count: 60, errorRate: 0.2, 'cost.sum': 0.75 },
+      cost: { coverage: 0.5, unit: 'usd' },
+    },
+    {
+      dimensions: { environment: null },
+      measures: { count: 5, errorRate: 0, 'cost.sum': null },
+      cost: { coverage: null, unit: null },
+    },
+  ],
+  truncated: false,
+};
+
+/** Breakdown by execution source. */
+export const executionSourceBreakdownFixture: AggregateTracesResponse = {
+  rows: [
+    {
+      dimensions: { executionSource: 'cloud' },
+      measures: { count: 300, errorRate: 0.01, 'cost.sum': 8 },
+      cost: { coverage: 1, unit: 'usd' },
+    },
+    {
+      dimensions: { executionSource: 'local' },
+      measures: { count: 165, errorRate: 0.1, 'cost.sum': 5 },
+      cost: { coverage: 1, unit: 'usd' },
+    },
+  ],
+  truncated: false,
+};
+
+const hourBefore = (timeRange: { to: string }, hoursAgo: number) =>
+  new Date((Math.floor(Date.parse(timeRange.to) / HOUR) - hoursAgo) * HOUR).toISOString();
+
+/** Distinct users and sessions in two hourly buckets: 3 + 4 users per bucket, but 5 over the range. */
+export function distinctUsersSeriesFixture(timeRange: { to: string }): AggregateTracesResponse {
+  return {
+    rows: [
+      {
+        bucket: hourBefore(timeRange, 2),
+        measures: { 'countDistinct.userId': 3, 'countDistinct.sessionId': 6 },
+      },
+      {
+        bucket: hourBefore(timeRange, 1),
+        measures: { 'countDistinct.userId': 4, 'countDistinct.sessionId': 9 },
+      },
+    ],
+    truncated: false,
+  };
+}
+
+export const distinctUsersTotalsFixture: AggregateTracesResponse = {
+  rows: [{ measures: { 'countDistinct.userId': 5, 'countDistinct.sessionId': 14 } }],
+  truncated: false,
+};
+
+/** Range cost priced for 80% of traces with usage. */
+export const costTotalFixture: AggregateTracesResponse = {
+  rows: [{ measures: { 'cost.sum': 42.5 }, cost: { coverage: 0.8, unit: 'usd' } }],
+  truncated: false,
+};
+
+export const mixedCurrencyCostFixture: AggregateTracesResponse = {
+  rows: [{ measures: { 'cost.sum': 42.5 }, cost: { coverage: 1, unit: 'mixed' } }],
+  truncated: false,
+};
+
+/** Coverage per hour: fully priced, then 60% priced. */
+export function costCoverageSeriesFixture(timeRange: { to: string }): AggregateTracesResponse {
+  return {
+    rows: [
+      { bucket: hourBefore(timeRange, 2), measures: { 'cost.sum': 30 }, cost: { coverage: 1, unit: 'usd' } },
+      { bucket: hourBefore(timeRange, 1), measures: { 'cost.sum': 12.5 }, cost: { coverage: 0.6, unit: 'usd' } },
+    ],
+    truncated: false,
+  };
+}
