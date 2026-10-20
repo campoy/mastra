@@ -13,6 +13,8 @@ import {
   MetricsKpis,
   ScoresCard,
   TokenUsageCard,
+  TopEntitiesCard,
+  TraceLatencyCard,
   TraceVolumeCard,
   UsageCard,
 } from '@mastra/playground-ui/domains/metrics/components';
@@ -277,6 +279,14 @@ function MetricsCards() {
             onModelClick={model => openTraces({ model })}
             onThreadClick={threadId => openTraces({ threadId })}
           />
+        </MetricsGrid.Item>
+      </MetricsGrid>
+      <MetricsGrid columns={2}>
+        <MetricsGrid.Item>
+          <TraceLatencyCard onViewTraces={openTraces} onPointClick={openTraces} />
+        </MetricsGrid.Item>
+        <MetricsGrid.Item>
+          <TopEntitiesCard onEntityClick={openTraces} />
         </MetricsGrid.Item>
       </MetricsGrid>
       <ScoresCard />

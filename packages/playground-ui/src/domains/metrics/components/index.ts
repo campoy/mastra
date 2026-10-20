@@ -14,3 +14,5 @@ export { LatencyCard, type LatencyCardProps } from './latency-card';
 export { TraceVolumeCard, type TraceVolumeCardProps } from './trace-volume-card';
 export { UsageCard, type UsageCardProps } from './usage-card';
 export { ScoresCard } from './scores-card';
+export { TraceLatencyCard, type TraceLatencyCardProps } from './trace-latency-card';
+export { TopEntitiesCard, type TopEntitiesCardProps } from './top-entities-card';
