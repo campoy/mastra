@@ -69,9 +69,9 @@ export class TemporalRun<
 
       return {
         status: 'success',
-        input: result.input as TInput,
+        input: input as TInput,
         result: result.result as TOutput,
-        state: result.state as TState,
+        state: initialState,
         steps: {},
       } as WorkflowResult<TState, TInput, TOutput, TSteps>;
     } catch (error) {
