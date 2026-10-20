@@ -25,13 +25,15 @@ describe('TemporalRun', () => {
       );
       const taskQueue = `start-result-${crypto.randomUUID()}`;
       const schema = z.unknown();
+      const stateSchema = z.object({ date: z.date(), optional: z.unknown().optional() });
+      const inputSchema = stateSchema.extend({ output: schema });
       const echo = createStep({
         id: 'echo',
-        inputSchema: schema,
+        inputSchema,
         outputSchema: schema,
-        execute: async ({ inputData }) => inputData,
+        execute: async ({ inputData }) => inputData.output,
       });
-      const config = { id: 'echo-workflow', inputSchema: schema, outputSchema: schema };
+      const config = { id: 'echo-workflow', inputSchema, outputSchema: schema, stateSchema };
       const local = createLocalWorkflow(config).then(echo).commit();
       const temporal = createWorkflow(config, { client: new Client({ connection }), taskQueue })
         .then(echo)
@@ -40,18 +42,22 @@ describe('TemporalRun', () => {
         connection: nativeConnection,
         taskQueue,
         workflowsPath,
-        activities: { echo: async ({ inputData }: { inputData: unknown }) => inputData },
+        activities: { echo: async ({ inputData }: { inputData: { output: unknown } }) => inputData.output },
       });
 
       await worker.runUntil(async () => {
         // Preserve null and user outputs containing their own result field.
-        for (const inputData of [{ value: 6 }, null, { result: { value: 6 } }, 0, false, '']) {
-          const expected = await (await local.createRun()).start({ inputData });
-          const actual = await (await temporal.createRun()).start({ inputData });
+        for (const output of [{ value: 6 }, null, { result: { value: 6 } }, 0, false, '']) {
+          const initialState = { date: new Date('2026-10-20T00:00:00Z'), optional: undefined };
+          const inputData = { ...initialState, output };
+          const expected = await (await local.createRun()).start({ inputData, initialState });
+          const actual = await (await temporal.createRun()).start({ inputData, initialState });
           expect(expected.status).toBe('success');
           expect(actual.status).toBe('success');
           if (expected.status === 'success' && actual.status === 'success') {
             expect(actual.result).toEqual(expected.result);
+            expect(actual.input).toStrictEqual(expected.input);
+            expect(actual.state).toStrictEqual(initialState);
           }
         }
       });
