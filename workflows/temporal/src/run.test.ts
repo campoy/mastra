@@ -2,16 +2,22 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStep, createWorkflow as createLocalWorkflow } from '@mastra/core/workflows';
-import { Client, Connection } from '@temporalio/client';
-import { NativeConnection, Worker } from '@temporalio/worker';
+import type { Client } from '@temporalio/client';
+import { TestWorkflowEnvironment } from '@temporalio/testing';
+import { Worker } from '@temporalio/worker';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createWorkflow } from './workflow';
 
 describe('TemporalRun', () => {
-  it.runIf(process.env.TEMPORAL_ADDRESS)('returns the same output as a local run', async () => {
-    const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS });
-    const nativeConnection = await NativeConnection.connect({ address: process.env.TEMPORAL_ADDRESS });
+  it('returns the same output as a local run', async () => {
+    const env = await TestWorkflowEnvironment.createLocal({
+      server: {
+        executable: process.env.TEMPORAL_CLI_PATH
+          ? { type: 'existing-path', path: process.env.TEMPORAL_CLI_PATH }
+          : undefined,
+      },
+    });
     const packageRoot = fileURLToPath(new URL('..', import.meta.url));
     const directory = await realpath(await mkdtemp(path.join(packageRoot, '.start-result-')));
 
@@ -35,11 +41,9 @@ describe('TemporalRun', () => {
       });
       const config = { id: 'echo-workflow', inputSchema, outputSchema: schema, stateSchema };
       const local = createLocalWorkflow(config).then(echo).commit();
-      const temporal = createWorkflow(config, { client: new Client({ connection }), taskQueue })
-        .then(echo)
-        .commit();
+      const temporal = createWorkflow(config, { client: env.client, taskQueue }).then(echo).commit();
       const worker = await Worker.create({
-        connection: nativeConnection,
+        connection: env.nativeConnection,
         taskQueue,
         workflowsPath,
         activities: { echo: async ({ inputData }: { inputData: { output: unknown } }) => inputData.output },
@@ -62,8 +66,7 @@ describe('TemporalRun', () => {
         }
       });
     } finally {
-      await nativeConnection.close();
-      await connection.close();
+      await env.teardown();
       await rm(directory, { recursive: true, force: true });
     }
   });
