@@ -1,10 +1,76 @@
-import { createStep } from '@mastra/core/workflows';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createStep, createWorkflow as createLocalWorkflow } from '@mastra/core/workflows';
 import type { Client } from '@temporalio/client';
+import { TestWorkflowEnvironment } from '@temporalio/testing';
+import { Worker } from '@temporalio/worker';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createWorkflow } from './workflow';
 
 describe('TemporalRun', () => {
+  it('returns the same output as a local run', async () => {
+    const env = await TestWorkflowEnvironment.createLocal({
+      server: {
+        executable: process.env.TEMPORAL_CLI_PATH
+          ? { type: 'existing-path', path: process.env.TEMPORAL_CLI_PATH }
+          : undefined,
+      },
+    });
+    const packageRoot = fileURLToPath(new URL('..', import.meta.url));
+    const directory = await realpath(await mkdtemp(path.join(packageRoot, '.start-result-')));
+
+    try {
+      const workflowsPath = path.join(directory, 'workflow.mjs');
+      const runtimePath = fileURLToPath(new URL('./transforms/temporal-workflow-runtime.mjs', import.meta.url));
+      await writeFile(
+        workflowsPath,
+        `import { createWorkflow } from ${JSON.stringify(runtimePath)};
+         export const echoWorkflow = createWorkflow('echo-workflow').then('echo').commit();`,
+      );
+      const taskQueue = `start-result-${crypto.randomUUID()}`;
+      const schema = z.unknown();
+      const stateSchema = z.object({ date: z.date(), optional: z.unknown().optional() });
+      const inputSchema = stateSchema.extend({ output: schema });
+      const echo = createStep({
+        id: 'echo',
+        inputSchema,
+        outputSchema: schema,
+        execute: async ({ inputData }) => inputData.output,
+      });
+      const config = { id: 'echo-workflow', inputSchema, outputSchema: schema, stateSchema };
+      const local = createLocalWorkflow(config).then(echo).commit();
+      const temporal = createWorkflow(config, { client: env.client, taskQueue }).then(echo).commit();
+      const worker = await Worker.create({
+        connection: env.nativeConnection,
+        taskQueue,
+        workflowsPath,
+        activities: { echo: async ({ inputData }: { inputData: { output: unknown } }) => inputData.output },
+      });
+
+      await worker.runUntil(async () => {
+        // Preserve null and user outputs containing their own result field.
+        for (const output of [{ value: 6 }, null, { result: { value: 6 } }, 0, false, '']) {
+          const initialState = { date: new Date('2026-10-20T00:00:00Z'), optional: undefined };
+          const inputData = { ...initialState, output };
+          const expected = await (await local.createRun()).start({ inputData, initialState });
+          const actual = await (await temporal.createRun()).start({ inputData, initialState });
+          expect(expected.status).toBe('success');
+          expect(actual.status).toBe('success');
+          if (expected.status === 'success' && actual.status === 'success') {
+            expect(actual.result).toEqual(expected.result);
+            expect(actual.input).toStrictEqual(expected.input);
+            expect(actual.state).toStrictEqual(initialState);
+          }
+        }
+      });
+    } finally {
+      await env.teardown();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('does not execute stream runs with the local workflow engine', async () => {
     const execute = vi.fn().mockResolvedValue({ value: 2 });
     const start = vi.fn();
