@@ -50,6 +50,23 @@ describe('TemporalRun', () => {
     );
   });
 
+  it.each([
+    [{}, true],
+    [{ validateInputs: false }, false],
+  ])('sends the workflow validateInputs setting (%o) to the Temporal Workflow', async (options, expected) => {
+    // The generated Workflow passes it to each step Activity, which checks the step input when it is true.
+    const start = vi.fn().mockResolvedValue({ result: async () => ({ result: null }) });
+    const workflow = createWorkflow(
+      { id: 'test-workflow', options },
+      { client: { workflow: { start } } as unknown as Client, taskQueue: 'test-queue' },
+    ).commit();
+
+    await (await workflow.createRun()).start({ inputData: {} });
+    await (await workflow.createRun()).startAsync({ inputData: {} });
+
+    expect(start.mock.calls.map(([, { args }]) => args[0].validateInputs)).toEqual([expected, expected]);
+  });
+
   it('cancels the matching Temporal workflow before updating local state', async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const getHandle = vi.fn().mockReturnValue({ cancel });

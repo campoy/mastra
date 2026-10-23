@@ -36,6 +36,7 @@ describe('temporal workflow runtime helper module', () => {
       requestContext: { tenantId: 'tenant-1' },
       runId: 'run-1',
       resourceId: 'resource-1',
+      validateInputs: true,
     });
 
     expect(proxyActivities).toHaveBeenCalledWith({ startToCloseTimeout: '1 minute' });
@@ -45,6 +46,7 @@ describe('temporal workflow runtime helper module', () => {
       requestContext: { tenantId: 'tenant-1' },
       runId: 'run-1',
       resourceId: 'resource-1',
+      validateInputs: true,
       workflowId: 'weather-workflow',
     });
     expect(result).toEqual({
@@ -150,8 +152,10 @@ describe('temporal workflow runtime helper module', () => {
       requestContext: { tenantId: 'tenant-1' },
       runId: 'run-1',
       resourceId: 'resource-1',
+      validateInputs: false,
     });
 
+    // The child inherits the parent's validateInputs, as nested workflows do in Mastra.
     expect(executeChild).toHaveBeenCalledWith('childWorkflow', {
       args: [
         {
@@ -159,6 +163,7 @@ describe('temporal workflow runtime helper module', () => {
           requestContext: { tenantId: 'tenant-1' },
           runId: 'run-1',
           resourceId: 'resource-1',
+          validateInputs: false,
           workflowId: 'weather-workflow',
         },
       ],

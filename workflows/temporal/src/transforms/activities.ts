@@ -366,29 +366,34 @@ function createTemporalActivitiesHelperStatements(
       };
     }
 
+    // MastraPlugin checks the input against the step's schema before it runs the step.
+    function withInputSchema(args, activity) {
+      return Object.assign(activity, { inputSchema: args.inputSchema });
+    }
+
     ${
       mastraImportPath
         ? `
           function createStep(args) {
-            return async (params) => {
+            return withInputSchema(args, async (params) => {
               const { mastra } = await import(${JSON.stringify(mastraImportPath)});
               return args.execute({ ...withRequestContext(params), mastra });
-            };
+            });
           }
         `
         : hasMastraBinding
           ? `
             function createStep(args) {
-              return async (params) => {
+              return withInputSchema(args, async (params) => {
                 return args.execute({ ...withRequestContext(params), mastra });
-              };
+              });
             }
           `
           : `
             function createStep(args) {
-              return async (params) => {
+              return withInputSchema(args, async (params) => {
                 return args.execute(withRequestContext(params));
-              };
+              });
             }
           `
     }
