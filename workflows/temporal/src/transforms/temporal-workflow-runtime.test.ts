@@ -4,6 +4,7 @@ const executeChild = vi.fn();
 const proxyActivities = vi.fn();
 const sleep = vi.fn(async () => {});
 const logInfo = vi.fn();
+const meta = (payload: unknown) => ({ payload, startedAt: expect.any(Number), endedAt: expect.any(Number) });
 
 vi.mock('@temporalio/workflow', () => ({
   executeChild,
@@ -55,6 +56,9 @@ describe('temporal workflow runtime helper module', () => {
       steps: {
         'fetch-weather': { city: 'SF', weather: 'sunny' },
       },
+      stepMeta: {
+        'fetch-weather': meta({ city: 'SF' }),
+      },
     });
   });
 
@@ -90,6 +94,9 @@ describe('temporal workflow runtime helper module', () => {
       state: undefined,
       steps: {
         [mappingId]: { doubled: 42, initialValue: 21 },
+      },
+      stepMeta: {
+        [mappingId]: meta({ value: 21 }),
       },
     });
   });
@@ -171,6 +178,9 @@ describe('temporal workflow runtime helper module', () => {
       steps: {
         childWorkflow: { city: 'SF', child: true },
       },
+      stepMeta: {
+        childWorkflow: meta({ city: 'SF' }),
+      },
     });
   });
 
@@ -223,6 +233,10 @@ describe('temporal workflow runtime helper module', () => {
         first: { first: 2 },
         second: { second: 3 },
       },
+      stepMeta: {
+        first: meta({ value: 1 }),
+        second: meta({ value: 1 }),
+      },
     });
   });
 
@@ -248,6 +262,9 @@ describe('temporal workflow runtime helper module', () => {
       state: undefined,
       steps: {
         childWorkflow: { value: 'child-output' },
+      },
+      stepMeta: {
+        childWorkflow: meta({ value: 'parent-input' }),
       },
     });
   });
@@ -315,6 +332,9 @@ describe('temporal workflow runtime helper module', () => {
       result: [{ value: 11 }, { value: 12 }, { value: 13 }],
       steps: {
         map: [{ value: 11 }, { value: 12 }, { value: 13 }],
+      },
+      stepMeta: {
+        map: meta(initData),
       },
     });
   });
@@ -413,6 +433,10 @@ describe('temporal workflow runtime helper module', () => {
       result: { value: 2 },
       steps: {
         incrementWhile: { value: 2 },
+      },
+      // The last iteration's input.
+      stepMeta: {
+        incrementWhile: meta({ value: 1 }),
       },
     });
     await expect(doUntilWorkflow({ inputData: { value: 0 } })).resolves.toMatchObject({

@@ -20,6 +20,8 @@ export class TemporalExecutionEngine {
       ...(params.resourceId !== undefined && { resourceId: params.resourceId }),
       workflowId: params.workflowId,
     };
+    // Inputs and times of the entries in `steps`, so `start()` can return Mastra step records.
+    this.stepMeta = {};
     let result = params.input;
     const stepResults = {};
 
@@ -33,7 +35,14 @@ export class TemporalExecutionEngine {
       result,
       state: params.initialState,
       steps: stepResults,
+      stepMeta: this.stepMeta,
     };
+  }
+
+  // Date.now() is the Workflow Task time, which replay reproduces from history.
+  recordStep(stepResults, id, payload, startedAt, output) {
+    stepResults[id] = output;
+    this.stepMeta[id] = { payload, startedAt, endedAt: Date.now() };
   }
 
   activityParams(inputData, extra = {}) {
@@ -44,27 +53,30 @@ export class TemporalExecutionEngine {
     switch (entry.type) {
       case 'step': {
         log.info('step', { stepId: entry.step.id });
+        const startedAt = Date.now();
         const out = await this.activityHandle[entry.step.id](
           this.activityParams(inputData, { initData: this.initData }),
         );
-        stepResults[entry.step.id] = out;
+        this.recordStep(stepResults, entry.step.id, inputData, startedAt, out);
         return out;
       }
 
       case 'childWorkflow': {
         log.info('childWorkflow', { workflowType: entry.workflowType });
+        const startedAt = Date.now();
         const childResult = await executeChild(entry.workflowType, {
           args: [{ inputData, ...this.executionContext }],
         });
         const out = childResult?.result ?? childResult;
-        stepResults[entry.workflowType] = out;
+        this.recordStep(stepResults, entry.workflowType, inputData, startedAt, out);
         return out;
       }
 
       case 'mapping': {
         log.info('mapping', { mappingId: entry.id });
+        const startedAt = Date.now();
         const out = await this.activityHandle[entry.id](this.activityParams(inputData, { initData: this.initData }));
-        stepResults[entry.id] = out;
+        this.recordStep(stepResults, entry.id, inputData, startedAt, out);
         return out;
       }
 
@@ -117,9 +129,10 @@ export class TemporalExecutionEngine {
         for (let i = 0; i < entry.steps.length; i++) {
           if (condResults[i]) {
             const stepId = entry.steps[i].step.id;
+            const startedAt = Date.now();
             const res = await this.activityHandle[stepId](this.activityParams(inputData, { initData: this.initData }));
             out[stepId] = res;
-            stepResults[stepId] = res;
+            this.recordStep(stepResults, stepId, inputData, startedAt, res);
           }
         }
 
@@ -131,8 +144,10 @@ export class TemporalExecutionEngine {
         let current = inputData;
 
         while (true) {
+          const payload = current;
+          const startedAt = Date.now();
           current = await this.activityHandle[entry.step.id](this.activityParams(current, { initData: this.initData }));
-          stepResults[entry.step.id] = current;
+          this.recordStep(stepResults, entry.step.id, payload, startedAt, current);
           const shouldContinue = Boolean(
             await this.activityHandle[entry.serializedCondition.id](this.activityParams(current)),
           );
@@ -154,6 +169,7 @@ export class TemporalExecutionEngine {
             : (entry.opts.concurrency ?? 1);
         const concurrency = Number.isFinite(configured) ? Math.max(1, Math.floor(configured)) : 1;
         log.info('foreach', { step: entry.step.id, concurrency });
+        const startedAt = Date.now();
         const results = new Array(items.length);
         let index = 0;
         const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -169,7 +185,7 @@ export class TemporalExecutionEngine {
         });
 
         await Promise.all(workers);
-        stepResults[entry.step.id] = results;
+        this.recordStep(stepResults, entry.step.id, inputData, startedAt, results);
         return results;
       }
 

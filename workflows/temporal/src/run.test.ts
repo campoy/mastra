@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { createWorkflow } from './workflow';
 
 describe('TemporalRun', () => {
-  it('returns the same output as a local run', async () => {
+  it('returns the same output and step records as a local run', async () => {
     const env = await TestWorkflowEnvironment.createLocal({
       server: {
         executable: process.env.TEMPORAL_CLI_PATH
@@ -62,6 +62,13 @@ describe('TemporalRun', () => {
             expect(actual.result).toEqual(expected.result);
             expect(actual.input).toStrictEqual(expected.input);
             expect(actual.state).toStrictEqual(initialState);
+            const record = { status: 'success', output, startedAt: expect.any(Number), endedAt: expect.any(Number) };
+            expect(expected.steps).toMatchObject({ input: inputData, echo: record });
+            // The Temporal record also keeps the step input as the Activity received it.
+            expect(actual.steps).toEqual({
+              input: inputData,
+              echo: { ...record, payload: JSON.parse(JSON.stringify(inputData)) },
+            });
           }
         }
       });

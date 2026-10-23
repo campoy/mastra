@@ -11,6 +11,8 @@ export interface WorkflowExecutionResult {
   result: unknown;
   state: unknown;
   steps: Record<string, unknown>;
+  /** Missing from results of Workers older than this field. */
+  stepMeta?: Record<string, { payload: unknown; startedAt: number; endedAt: number }>;
 }
 
 export type StepEntry = {
