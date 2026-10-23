@@ -460,7 +460,15 @@ describe('@mastra/temporal configureWorker activities', () => {
         execute: async ({ inputData }) => inputData,
       });
 
-      export const incrementWorkflow = createWorkflow({ id: 'increment-workflow' }).then(increment);
+      // An application binding that shares a name an injected helper could use.
+      const withInputSchema = value => value + 1;
+      const bump = createStep({
+        id: 'bump',
+        inputSchema: z.object({ value: z.number() }),
+        execute: async ({ inputData }) => ({ value: withInputSchema(inputData.value) }),
+      });
+
+      export const incrementWorkflow = createWorkflow({ id: 'increment-workflow' }).then(increment).then(bump);
     `;
     mockCompiledBundle({ compiledEntrySource, compiledWorkflowSource: 'export const unused = true;' });
     // A project root of its own, so this activities module is not the one earlier tests imported.
@@ -471,7 +479,7 @@ describe('@mastra/temporal configureWorker activities', () => {
     const workerOptions = await new MastraPlugin(entryPath, projectRoot).configureWorker({
       taskQueue: 'mastra',
     } as any);
-    const increment = (workerOptions.activities as Record<string, (...args: any[]) => Promise<unknown>>).increment;
+    const { increment, bump } = workerOptions.activities as Record<string, (...args: any[]) => Promise<unknown>>;
 
     // The step gets the parsed input, with the schema's transform and default applied.
     await expect(increment({ inputData: { value: 5, note: ' hi ' }, validateInputs: true })).resolves.toEqual({
@@ -490,5 +498,7 @@ describe('@mastra/temporal configureWorker activities', () => {
     // validateInputs: false, and runs started before the Workflow sent the setting, skip the check.
     await expect(increment({ inputData: { value: '5' }, validateInputs: false })).resolves.toEqual({ value: '5' });
     await expect(increment({ inputData: { value: '5' } })).resolves.toEqual({ value: '5' });
+    // The application's own withInputSchema still runs inside its step.
+    await expect(bump({ inputData: { value: 5 }, validateInputs: true })).resolves.toEqual({ value: 6 });
   });
 });

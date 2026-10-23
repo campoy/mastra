@@ -13,19 +13,15 @@ function withRequestContext(params) {
     getInitData: () => initData
   };
 }
-
-// MastraPlugin checks the input against the step's schema before it runs the step.
-function withInputSchema(args, activity) {
-  return Object.assign(activity, {
-    inputSchema: args.inputSchema
-  });
-}
 function createStep(args) {
-  return withInputSchema(args, async params => {
+  // MastraPlugin checks the input against the step's schema before it runs the step.
+  return Object.assign(async params => {
     return args.execute({
       ...withRequestContext(params),
       mastra
     });
+  }, {
+    inputSchema: args.inputSchema
   });
 }
 const mastra = {
