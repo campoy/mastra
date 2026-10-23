@@ -305,11 +305,12 @@ describe('Temporal prebuild integration', () => {
   it('runs each app on a Worker shared by two MastraPlugins, and refuses apps that clash', async () => {
     // Each app has its own entry and project root; its only step returns the app's name.
     const sources = new Map<string, string>();
-    vi.spyOn(BuildBundler.prototype, 'bundle').mockImplementation(async (entryFile, outputDirectory) => {
+    const bundle = async (entryFile: string, outputDirectory: string) => {
       await mkdir(path.join(outputDirectory, 'output'), { recursive: true });
       await writeFile(path.join(outputDirectory, 'output', 'index.mjs'), sources.get(entryFile)!, 'utf8');
-    });
-    async function app(name: string, workflowId: string, stepId: string) {
+    };
+    vi.spyOn(BuildBundler.prototype, 'bundle').mockImplementation(bundle);
+    async function app(name: string, workflowId: string, stepId: string, Plugin = MastraPlugin, extra = '') {
       const root = await mkdtemp(path.join(os.tmpdir(), `mastra-temporal-two-plugins-${name}-`));
       tempDirs.push(root);
       await writeMastraCoreShim(root);
@@ -321,9 +322,10 @@ describe('Temporal prebuild integration', () => {
           import { createStep, createWorkflow } from '@mastra/core/workflows';
           const step = createStep({ id: '${stepId}', execute: async () => ({ app: '${name}' }) });
           export const workflow = createWorkflow({ id: '${workflowId}' }).then(step).commit();
+          ${extra}
         `,
       );
-      return new MastraPlugin(entryFile, root);
+      return new Plugin(entryFile, root);
     }
     const configure = async (...plugins: MastraPlugin[]) => {
       let options = { taskQueue: 'mastra' } as any;
@@ -355,6 +357,32 @@ describe('Temporal prebuild integration', () => {
       'greetAWorkflow',
       'greetBWorkflow',
     ]);
+    // A workflow exported under a string name keeps it in the combined module.
+    const named = await configure(
+      appA,
+      await app('F', 'greet-f', 'step-f', MastraPlugin, 'export { workflow as "friendly-name" };'),
+    );
+    expect(Object.keys(await import(moduleUrl(named.workflowsPath))).sort()).toEqual([
+      'friendly-name',
+      'greetAWorkflow',
+      'greetFWorkflow',
+    ]);
+    // A plugin from another copy of this module, as for apps installed separately, combines too.
+    const copy = (await import(
+      /* @vite-ignore */ `${pathToFileURL(path.join(import.meta.dirname, 'plugin.ts')).href}?copy`
+    )) as typeof import('./plugin');
+    expect(copy.MastraPlugin).not.toBe(MastraPlugin);
+    const separate = await configure(appA, await app('D', 'greet-d', 'step-d', copy.MastraPlugin));
+    expect(Object.keys(await import(moduleUrl(separate.workflowsPath))).sort()).toEqual([
+      'greetAWorkflow',
+      'greetDWorkflow',
+    ]);
+    await expect(configure(appA, await app('D', 'greet-a', 'step-d', copy.MastraPlugin))).rejects.toThrow(
+      "Duplicate registration of Workflow type 'greetAWorkflow'",
+    );
+    await expect(configure(appA, await app('D', 'greet-d', 'step-a', copy.MastraPlugin))).rejects.toThrow(
+      "Duplicate registration of Activity 'step-a'",
+    );
 
     // One workflow id in both apps: app A's runs would execute app B's workflow.
     await expect(configure(await app('A', 'greet', 'step-a'), await app('B', 'greet', 'step-b'))).rejects.toThrow(

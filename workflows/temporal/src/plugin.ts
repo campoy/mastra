@@ -14,9 +14,24 @@ const ACTIVITIES_FILE_NAME = 'activities.mjs';
 const ACTIVITY_BINDINGS_FILE_NAME = 'activity-bindings.json';
 // A Worker takes one workflowsPath. To let several MastraPlugins share a Worker, remember for each
 // generated (or combined) Workflow module the Workflow types it exports and the generated modules it
-// contains, and which compiled step each generated Activity runs.
-const workflowModules = new Map<string, { exports: Set<string>; sources: Set<string> }>();
-const activitySources = new WeakMap<object, string>();
+// contains, and which compiled step each generated Activity runs. Apps installed separately load
+// their own copy of this package, so the registry lives on globalThis, where every copy finds it.
+const { workflowModules, activitySources } = ((globalThis as Record<symbol, unknown>)[
+  Symbol.for('@mastra/temporal/worker-registry/v1')
+] ??= {
+  workflowModules: new Map<string, { exports: Set<string>; sources: Set<string> }>(),
+  activitySources: new WeakMap<object, string>(),
+}) as {
+  workflowModules: Map<string, { exports: Set<string>; sources: Set<string> }>;
+  activitySources: WeakMap<object, string>;
+};
+
+/** Writes export names for `export { … } from`: identifiers as they are, other names as strings. */
+function exportList(names: Set<string>): string {
+  return [...names]
+    .map(name => (/^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u.test(name) ? name : JSON.stringify(name)))
+    .join(', ');
+}
 
 /**
  * Returns the workflowsPath for this plugin's module plus one an earlier MastraPlugin set: a module
@@ -43,8 +58,8 @@ async function combineWorkflowModules(earlier: string | undefined, own: string, 
   }
 
   const source =
-    `export { ${[...earlierModule.exports].join(', ')} } from ${JSON.stringify(earlier)};\n` +
-    `export { ${[...ownModule.exports].join(', ')} } from ${JSON.stringify(own)};\n`;
+    `export { ${exportList(earlierModule.exports)} } from ${JSON.stringify(earlier)};\n` +
+    `export { ${exportList(ownModule.exports)} } from ${JSON.stringify(own)};\n`;
   // One file per combination, so Workers that combine different plugins do not overwrite each
   // other's module. Write and rename, so a Worker never reads a half-written file.
   const combinedPath = path.join(
