@@ -27,7 +27,8 @@ describe('TemporalRun', () => {
       await writeFile(
         workflowsPath,
         `import { createWorkflow } from ${JSON.stringify(runtimePath)};
-         export const echoWorkflow = createWorkflow('echo-workflow').then('echo').commit();`,
+         export const echoWorkflow = createWorkflow('echo-workflow').then('echo').commit();
+         export const pairWorkflow = createWorkflow('pair-workflow').then('make').then('measure').commit();`,
       );
       const taskQueue = `start-result-${crypto.randomUUID()}`;
       const schema = z.unknown();
@@ -42,11 +43,41 @@ describe('TemporalRun', () => {
       const config = { id: 'echo-workflow', inputSchema, outputSchema: schema, stateSchema };
       const local = createLocalWorkflow(config).then(echo).commit();
       const temporal = createWorkflow(config, { client: env.client, taskQueue }).then(echo).commit();
+      // `make` returns undefined for size 0, else a string of that size; `measure` returns its length.
+      const makeOutput = ({ inputData }: { inputData: { size: number } }) =>
+        inputData.size ? 'x'.repeat(inputData.size) : undefined;
+      const measureOutput = ({ inputData }: { inputData?: string }) => ({ length: inputData?.length ?? 0 });
+      const make = createStep({
+        id: 'make',
+        inputSchema: z.object({ size: z.number() }),
+        outputSchema: z.string().optional(),
+        execute: async args => makeOutput(args),
+      });
+      const measure = createStep({
+        id: 'measure',
+        inputSchema: z.string().optional(),
+        outputSchema: z.object({ length: z.number() }),
+        execute: async args => measureOutput(args),
+      });
+      const pairConfig = {
+        id: 'pair-workflow',
+        inputSchema: z.object({ size: z.number() }),
+        outputSchema: z.unknown(),
+      };
+      const localPair = createLocalWorkflow(pairConfig).then(make).then(measure).commit();
+      const temporalPair = createWorkflow(pairConfig, { client: env.client, taskQueue })
+        .then(make)
+        .then(measure)
+        .commit();
       const worker = await Worker.create({
         connection: env.nativeConnection,
         taskQueue,
         workflowsPath,
-        activities: { echo: async ({ inputData }: { inputData: { output: unknown } }) => inputData.output },
+        activities: {
+          echo: async ({ inputData }: { inputData: { output: unknown } }) => inputData.output,
+          make: async (args: { inputData: { size: number } }) => makeOutput(args),
+          measure: async (args: { inputData?: string }) => measureOutput(args),
+        },
       });
 
       await worker.runUntil(async () => {
@@ -66,6 +97,28 @@ describe('TemporalRun', () => {
             const record = { status: 'success', output, startedAt: expect.any(Number), endedAt: expect.any(Number) };
             expect(expected.steps).toMatchObject({ input: inputData, echo: record });
             expect(actual.steps).toEqual({ input: inputData, echo: record });
+          }
+        }
+
+        // A void step before another step keeps its record. A 1,300,000-character intermediate output
+        // fits in the result without step records (default limit 2 MB), so the records must not copy it.
+        for (const size of [0, 1_300_000]) {
+          const expected = await (await localPair.createRun()).start({ inputData: { size } });
+          const actual = await (await temporalPair.createRun()).start({ inputData: { size } });
+          expect(expected.status).toBe('success');
+          expect(actual.status).toBe('success');
+          if (expected.status === 'success' && actual.status === 'success') {
+            expect(actual.result).toEqual(expected.result);
+            expect(Object.keys(actual.steps)).toEqual(Object.keys(expected.steps));
+            for (const stepId of ['make', 'measure'] as const) {
+              const native = expected.steps[stepId];
+              expect(actual.steps[stepId]).toEqual({
+                status: 'success',
+                output: native?.status === 'success' ? native.output : 'missing',
+                startedAt: expect.any(Number),
+                endedAt: expect.any(Number),
+              });
+            }
           }
         }
       });
