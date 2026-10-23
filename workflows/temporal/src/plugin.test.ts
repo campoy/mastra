@@ -332,7 +332,8 @@ describe('Temporal prebuild integration', () => {
     };
 
     // Different workflow and step ids: the Worker gets a module with both apps' workflows.
-    const options = await configure(await app('A', 'greet-a', 'step-a'), await app('B', 'greet-b', 'step-b'));
+    const [appA, appB] = [await app('A', 'greet-a', 'step-a'), await app('B', 'greet-b', 'step-b')];
+    const options = await configure(appA, appB);
     (globalThis as typeof globalThis & { __temporalWorkflowMock: unknown }).__temporalWorkflowMock = {
       proxyActivities: () => options.activities,
       log: { info: () => {} },
@@ -344,6 +345,16 @@ describe('Temporal prebuild integration', () => {
     expect(Object.keys(workflows).sort()).toEqual(['greetAWorkflow', 'greetBWorkflow']);
     await expect(workflows.greetAWorkflow({ inputData: {} })).resolves.toMatchObject({ result: { app: 'A' } });
     await expect(workflows.greetBWorkflow({ inputData: {} })).resolves.toMatchObject({ result: { app: 'B' } });
+    // A plugin already in the combination adds nothing, even after another plugin.
+    await expect(configure(appA, appB, appB)).resolves.toMatchObject({ workflowsPath: options.workflowsPath });
+    await expect(configure(appA, appB, appA)).resolves.toMatchObject({ workflowsPath: options.workflowsPath });
+    // Another combination gets its own module, so a second Worker cannot change the first one's.
+    const other = await configure(await app('C', 'greet-c', 'step-c'), appB);
+    expect(other.workflowsPath).not.toBe(options.workflowsPath);
+    expect(Object.keys(await import(moduleUrl(options.workflowsPath))).sort()).toEqual([
+      'greetAWorkflow',
+      'greetBWorkflow',
+    ]);
 
     // One workflow id in both apps: app A's runs would execute app B's workflow.
     await expect(configure(await app('A', 'greet', 'step-a'), await app('B', 'greet', 'step-b'))).rejects.toThrow(

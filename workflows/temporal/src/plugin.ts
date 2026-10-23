@@ -1,5 +1,6 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { WorkerOptions, WorkerPlugin } from '@temporalio/worker';
@@ -11,12 +12,10 @@ const CACHE_PATH = 'node_modules/.mastra';
 const WORKFLOW_FILE_NAME = 'workflow.mjs';
 const ACTIVITIES_FILE_NAME = 'activities.mjs';
 const ACTIVITY_BINDINGS_FILE_NAME = 'activity-bindings.json';
-const COMBINED_WORKFLOW_FILE_NAME = 'combined-workflow.mjs';
-
-// A Worker takes one workflowsPath. To let several MastraPlugins share a Worker, remember the
-// Workflow types each generated (or combined) module exports, and which compiled step each
-// generated Activity runs.
-const workflowModuleExports = new Map<string, Set<string>>();
+// A Worker takes one workflowsPath. To let several MastraPlugins share a Worker, remember for each
+// generated (or combined) Workflow module the Workflow types it exports and the generated modules it
+// contains, and which compiled step each generated Activity runs.
+const workflowModules = new Map<string, { exports: Set<string>; sources: Set<string> }>();
 const activitySources = new WeakMap<object, string>();
 
 /**
@@ -25,13 +24,17 @@ const activitySources = new WeakMap<object, string>();
  * workflows, so that fails. A workflowsPath from anywhere else is replaced, as before.
  */
 async function combineWorkflowModules(earlier: string | undefined, own: string, outputDir: string): Promise<string> {
-  const earlierExports = earlier && earlier !== own ? workflowModuleExports.get(earlier) : undefined;
-  if (!earlierExports) {
+  const earlierModule = earlier ? workflowModules.get(earlier) : undefined;
+  const ownModule = workflowModules.get(own);
+  if (!earlier || !earlierModule || !ownModule) {
     return own;
   }
+  // The same plugin, or one built from the same entry and project root, is already included.
+  if ([...ownModule.sources].every(source => earlierModule.sources.has(source))) {
+    return earlier;
+  }
 
-  const ownExports = workflowModuleExports.get(own) ?? new Set<string>();
-  const duplicate = [...ownExports].find(name => earlierExports.has(name));
+  const duplicate = [...ownModule.exports].find(name => earlierModule.exports.has(name));
   if (duplicate) {
     throw new TypeError(
       `Duplicate registration of Workflow type '${duplicate}': two MastraPlugin entries on this Worker export it. ` +
@@ -39,14 +42,22 @@ async function combineWorkflowModules(earlier: string | undefined, own: string, 
     );
   }
 
-  const combinedPath = path.join(outputDir, COMBINED_WORKFLOW_FILE_NAME);
-  await writeFile(
-    combinedPath,
-    `export { ${[...earlierExports].join(', ')} } from ${JSON.stringify(earlier)};\n` +
-      `export { ${[...ownExports].join(', ')} } from ${JSON.stringify(own)};\n`,
-    'utf8',
+  const source =
+    `export { ${[...earlierModule.exports].join(', ')} } from ${JSON.stringify(earlier)};\n` +
+    `export { ${[...ownModule.exports].join(', ')} } from ${JSON.stringify(own)};\n`;
+  // One file per combination, so Workers that combine different plugins do not overwrite each
+  // other's module. Write and rename, so a Worker never reads a half-written file.
+  const combinedPath = path.join(
+    outputDir,
+    `combined-workflow-${createHash('sha256').update(source).digest('hex').slice(0, 16)}.mjs`,
   );
-  workflowModuleExports.set(combinedPath, new Set([...earlierExports, ...ownExports]));
+  const tempPath = `${combinedPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, source, 'utf8');
+  await rename(tempPath, combinedPath);
+  workflowModules.set(combinedPath, {
+    exports: new Set([...earlierModule.exports, ...ownModule.exports]),
+    sources: new Set([...earlierModule.sources, ...ownModule.sources]),
+  });
   return combinedPath;
 }
 
@@ -118,7 +129,8 @@ export class MastraPlugin implements WorkerPlugin {
     const compiledEntryPath = await this.#bundleMastra(entryFile, projectRoot, temporalOutputDir);
 
     const { exports } = await buildTemporalWorkflowModule(compiledEntryPath, temporalOutputDir, WORKFLOW_FILE_NAME);
-    workflowModuleExports.set(getGeneratedWorkflowModulePath(temporalOutputDir), new Set(exports));
+    const workflowModulePath = getGeneratedWorkflowModulePath(temporalOutputDir);
+    workflowModules.set(workflowModulePath, { exports: new Set(exports), sources: new Set([workflowModulePath]) });
 
     const { activityBindings } = await buildTemporalActivitiesModule(
       compiledEntryPath,
