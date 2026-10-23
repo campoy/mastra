@@ -11,6 +11,58 @@ const CACHE_PATH = 'node_modules/.mastra';
 const WORKFLOW_FILE_NAME = 'workflow.mjs';
 const ACTIVITIES_FILE_NAME = 'activities.mjs';
 const ACTIVITY_BINDINGS_FILE_NAME = 'activity-bindings.json';
+const COMBINED_WORKFLOW_FILE_NAME = 'combined-workflow.mjs';
+
+// A Worker takes one workflowsPath. To let several MastraPlugins share a Worker, remember the
+// Workflow types each generated (or combined) module exports, and which compiled step each
+// generated Activity runs.
+const workflowModuleExports = new Map<string, Set<string>>();
+const activitySources = new WeakMap<object, string>();
+
+/**
+ * Returns the workflowsPath for this plugin's module plus one an earlier MastraPlugin set: a module
+ * that re-exports both. Two entries that export the same Workflow type would run each other's
+ * workflows, so that fails. A workflowsPath from anywhere else is replaced, as before.
+ */
+async function combineWorkflowModules(earlier: string | undefined, own: string, outputDir: string): Promise<string> {
+  const earlierExports = earlier && earlier !== own ? workflowModuleExports.get(earlier) : undefined;
+  if (!earlierExports) {
+    return own;
+  }
+
+  const ownExports = workflowModuleExports.get(own) ?? new Set<string>();
+  const duplicate = [...ownExports].find(name => earlierExports.has(name));
+  if (duplicate) {
+    throw new TypeError(
+      `Duplicate registration of Workflow type '${duplicate}': two MastraPlugin entries on this Worker export it. ` +
+        'Give the workflows different ids, or put each Mastra app on its own Worker and Task Queue.',
+    );
+  }
+
+  const combinedPath = path.join(outputDir, COMBINED_WORKFLOW_FILE_NAME);
+  await writeFile(
+    combinedPath,
+    `export { ${[...earlierExports].join(', ')} } from ${JSON.stringify(earlier)};\n` +
+      `export { ${[...ownExports].join(', ')} } from ${JSON.stringify(own)};\n`,
+    'utf8',
+  );
+  workflowModuleExports.set(combinedPath, new Set([...earlierExports, ...ownExports]));
+  return combinedPath;
+}
+
+/** Fails when an earlier MastraPlugin registered a different step under one of these Activity names. */
+function checkActivityNames(existing: object | undefined, generated: Record<string, unknown>): void {
+  for (const [name, activity] of Object.entries(generated)) {
+    const current = (existing as Record<string, unknown> | undefined)?.[name];
+    const currentSource = typeof current === 'function' ? activitySources.get(current) : undefined;
+    if (currentSource && currentSource !== activitySources.get(activity as object)) {
+      throw new TypeError(
+        `Duplicate registration of Activity '${name}': two MastraPlugin entries on this Worker have a step with this id. ` +
+          'Rename one, or put each Mastra app on its own Worker and Task Queue.',
+      );
+    }
+  }
+}
 
 function getGeneratedWorkflowModulePath(outputDir: string): string {
   return path.join(outputDir, WORKFLOW_FILE_NAME);
@@ -65,7 +117,8 @@ export class MastraPlugin implements WorkerPlugin {
     const temporalOutputDir = path.resolve(projectRoot, CACHE_PATH);
     const compiledEntryPath = await this.#bundleMastra(entryFile, projectRoot, temporalOutputDir);
 
-    await buildTemporalWorkflowModule(compiledEntryPath, temporalOutputDir, WORKFLOW_FILE_NAME);
+    const { exports } = await buildTemporalWorkflowModule(compiledEntryPath, temporalOutputDir, WORKFLOW_FILE_NAME);
+    workflowModuleExports.set(getGeneratedWorkflowModulePath(temporalOutputDir), new Set(exports));
 
     const { activityBindings } = await buildTemporalActivitiesModule(
       compiledEntryPath,
@@ -114,7 +167,7 @@ export class MastraPlugin implements WorkerPlugin {
         continue;
       }
 
-      generatedActivities[binding.stepId] = async (...args: unknown[]) => {
+      const generatedActivity = async (...args: unknown[]) => {
         const activityModule = await this.#loadCompiledActivitiesModule(compiledActivitiesPath);
         const activity = activityModule[binding.exportName];
 
@@ -124,6 +177,8 @@ export class MastraPlugin implements WorkerPlugin {
 
         return activity(...args);
       };
+      activitySources.set(generatedActivity, `${compiledActivitiesPath}#${binding.exportName}`);
+      generatedActivities[binding.stepId] = generatedActivity;
     }
 
     return generatedActivities;
@@ -159,7 +214,14 @@ export class MastraPlugin implements WorkerPlugin {
     }
 
     const generatedOptions = this.getTemporalWorkerOptions(this.#prebuildPath!);
+    const workflowsPath = await combineWorkflowModules(
+      options.workflowsPath,
+      generatedOptions.workflowsPath!,
+      this.#prebuildPath!,
+    );
+    checkActivityNames(options.activities, generatedOptions.activities as Record<string, unknown>);
     Object.assign(augmentedOptions, generatedOptions, {
+      workflowsPath,
       activities: {
         ...options.activities,
         ...generatedOptions.activities,

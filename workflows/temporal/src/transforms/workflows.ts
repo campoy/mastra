@@ -871,7 +871,7 @@ export async function buildTemporalWorkflowModule(
   entryFile: string,
   outputDirectory: string,
   outputFileName: string,
-): Promise<{ outputPath: string }> {
+): Promise<{ outputPath: string; exports: string[] }> {
   const bundle = await rollup({
     input: entryFile,
     treeshake: 'smallest',
@@ -918,9 +918,11 @@ export async function buildTemporalWorkflowModule(
     }
 
     const { output } = await bundle.write(outputOptions);
+    const entry = output.find(chunk => chunk.type === 'chunk' && chunk.isEntry)!;
 
     return {
-      outputPath: join(outputDirectory, output.find(chunk => chunk.type === 'chunk' && chunk.isEntry)!.fileName),
+      outputPath: join(outputDirectory, entry.fileName),
+      exports: entry.type === 'chunk' ? entry.exports : [],
     };
   } finally {
     await bundle.close();

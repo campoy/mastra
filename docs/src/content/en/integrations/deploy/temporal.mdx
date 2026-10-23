@@ -159,6 +159,8 @@ await worker.run()
 
 `MastraPlugin` rewrites the entry file into a workflow-only bundle and wires step handlers in as Temporal activities. You don't need to pass `activities` or `workflowsPath` to `Worker.create()` manually.
 
+To run several Mastra apps on one worker, pass one `MastraPlugin` per app, each with its own entry file and project root. Workflow ids and step ids must differ between the apps: `Worker.create()` fails when two apps use the same one.
+
 ## Running workflows
 
 ### Running locally
