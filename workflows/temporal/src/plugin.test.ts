@@ -259,8 +259,11 @@ describe('Temporal prebuild integration', () => {
     const complexWorkflow = workflowModule.complexWorkflow;
     expect(complexWorkflow).toBeTypeOf('function');
 
-    const result = await (complexWorkflow as (args: { inputData: { input: string } }) => Promise<unknown>)({
+    const result = await (
+      complexWorkflow as (args: { inputData: { input: string }; recordStepMeta: boolean }) => Promise<unknown>
+    )({
       inputData: { input: 'test' },
+      recordStepMeta: true,
     });
 
     expect(result).toEqual({
@@ -283,6 +286,7 @@ describe('Temporal prebuild integration', () => {
         step4: times,
       },
     });
+    // Started without recordStepMeta, the generated Workflow returns no stepMeta.
     const mappedWorkflow = workflowModule.mappedWorkflow;
     expect(mappedWorkflow).toBeTypeOf('function');
     await expect(
@@ -296,9 +300,6 @@ describe('Temporal prebuild integration', () => {
       state: undefined,
       steps: {
         'mapping_mapped-workflow_0': { doubled: 42 },
-      },
-      stepMeta: {
-        'mapping_mapped-workflow_0': times,
       },
     });
 

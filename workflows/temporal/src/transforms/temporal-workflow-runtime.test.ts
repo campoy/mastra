@@ -31,13 +31,14 @@ describe('temporal workflow runtime helper module', () => {
 
     const { createWorkflow } = await import('./temporal-workflow-runtime.mjs');
     const workflow = createWorkflow('weather-workflow').then('fetch-weather').commit();
-    const result = await workflow({
+    const startArgs = {
       inputData: { city: 'SF' },
       initialState: { started: true },
       requestContext: { tenantId: 'tenant-1' },
       runId: 'run-1',
       resourceId: 'resource-1',
-    });
+    };
+    const result = await workflow({ ...startArgs, recordStepMeta: true });
 
     expect(proxyActivities).toHaveBeenCalledWith({ startToCloseTimeout: '1 minute' });
     expect(fetchWeather).toHaveBeenCalledWith({
@@ -60,6 +61,10 @@ describe('temporal workflow runtime helper module', () => {
         'fetch-weather': times,
       },
     });
+    // A run started without recordStepMeta (by an older client or startAsync()) returns the result
+    // it returned before stepMeta existed.
+    const { stepMeta: _, ...withoutStepMeta } = result;
+    await expect(workflow(startArgs)).resolves.toStrictEqual(withoutStepMeta);
   });
 
   it('executes mapping entries through proxy activities', async () => {
@@ -77,6 +82,7 @@ describe('temporal workflow runtime helper module', () => {
       requestContext: { tenantId: 'tenant-1' },
       runId: 'run-1',
       resourceId: 'resource-1',
+      recordStepMeta: true,
     });
 
     expect(mapping).toHaveBeenCalledWith({
@@ -157,8 +163,10 @@ describe('temporal workflow runtime helper module', () => {
       requestContext: { tenantId: 'tenant-1' },
       runId: 'run-1',
       resourceId: 'resource-1',
+      recordStepMeta: true,
     });
 
+    // The child gets no recordStepMeta: the parent reads only its `result`.
     expect(executeChild).toHaveBeenCalledWith('childWorkflow', {
       args: [
         {
@@ -209,7 +217,7 @@ describe('temporal workflow runtime helper module', () => {
         { type: 'step', step: { id: 'second' } },
       ])
       .commit();
-    const result = await workflow({ inputData: { value: 1 } });
+    const result = await workflow({ inputData: { value: 1 }, recordStepMeta: true });
 
     expect(first).toHaveBeenCalledWith({
       inputData: { value: 1 },
@@ -248,7 +256,7 @@ describe('temporal workflow runtime helper module', () => {
     const workflow = createWorkflow('parallel-child-workflow')
       .parallel([{ type: 'childWorkflow', workflowType: 'childWorkflow' }])
       .commit();
-    const result = await workflow({ inputData: { value: 'parent-input' } });
+    const result = await workflow({ inputData: { value: 'parent-input' }, recordStepMeta: true });
 
     expect(executeChild).toHaveBeenCalledWith('childWorkflow', {
       args: [{ inputData: { value: 'parent-input' }, workflowId: 'parallel-child-workflow' }],
@@ -309,7 +317,7 @@ describe('temporal workflow runtime helper module', () => {
 
     const { createWorkflow } = await import('./temporal-workflow-runtime.mjs');
     const workflow = createWorkflow('foreach-workflow').foreach('map', { concurrency: 2 }).commit();
-    const result = await workflow({ inputData: [{ value: 1 }, { value: 2 }, { value: 3 }] });
+    const result = await workflow({ inputData: [{ value: 1 }, { value: 2 }, { value: 3 }], recordStepMeta: true });
 
     expect(map).toHaveBeenCalledTimes(3);
     const initData = [{ value: 1 }, { value: 2 }, { value: 3 }];
@@ -429,7 +437,7 @@ describe('temporal workflow runtime helper module', () => {
     const doWhileWorkflow = createWorkflow('dowhile-workflow').dowhile('incrementWhile', 'continueWhile').commit();
     const doUntilWorkflow = createWorkflow('dountil-workflow').dountil('incrementUntil', 'stopUntil').commit();
 
-    await expect(doWhileWorkflow({ inputData: { value: 0 } })).resolves.toMatchObject({
+    await expect(doWhileWorkflow({ inputData: { value: 0 }, recordStepMeta: true })).resolves.toMatchObject({
       result: { value: 2 },
       steps: {
         incrementWhile: { value: 2 },

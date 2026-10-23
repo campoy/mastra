@@ -23,3 +23,5 @@ result.steps.increment.output.value; // 6
 ```
 
 Remove any extra `.result` your code added to read the output. Step records need Workers on this version: a run that an older Worker finishes still returns `steps: {}`.
+
+The step times add about 70 bytes per step to the Temporal workflow result of a run started with `run.start()`. Runs started with `startAsync()` or by an older version, including runs already in progress when Workers upgrade, keep their result size, so a result that fit under the payload limit before still fits.

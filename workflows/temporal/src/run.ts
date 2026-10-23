@@ -6,7 +6,7 @@ import type { WorkflowExecutionResult } from './transforms/temporal-workflow-run
 import type { TemporalEngineType } from './types';
 import { toWorkflowType } from './utils';
 
-// Builds Mastra's step records. Results from Workers without `stepMeta` keep `steps: {}`
+// Builds Mastra's step records. Results without `stepMeta` (from older Workers) keep `steps: {}`
 // rather than records with made-up times. Iterates `stepMeta` because a step that returned
 // undefined has no key in `steps` once the result is serialized.
 function toStepResults(input: unknown, { steps, stepMeta }: WorkflowExecutionResult): Record<string, unknown> {
@@ -77,6 +77,8 @@ export class TemporalRun<
             outputOptions: args.outputOptions,
             tracingOptions: args.tracingOptions,
             perStep: args.perStep,
+            // Asks the Workflow for the step times that toStepResults needs.
+            recordStepMeta: true,
           },
         ],
       });

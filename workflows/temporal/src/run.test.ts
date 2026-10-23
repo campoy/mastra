@@ -7,6 +7,7 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker } from '@temporalio/worker';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { toWorkflowType } from './utils';
 import { createWorkflow } from './workflow';
 
 describe('TemporalRun', () => {
@@ -121,6 +122,24 @@ describe('TemporalRun', () => {
             }
           }
         }
+
+        // An execution started without recordStepMeta (by an older client, before a Worker upgrade)
+        // keeps its result unchanged. This one is about 20 bytes under the 2 MB limit once encoded;
+        // stepMeta would add about 130 bytes and stop it from completing.
+        const size = 2_096_976;
+        const handle = await env.client.workflow.start(toWorkflowType('pair-workflow'), {
+          taskQueue,
+          workflowId: `pair-${crypto.randomUUID()}`,
+          args: [{ inputData: { size }, initialState: undefined, requestContext: {} }],
+        });
+        const raw = await handle.result();
+        expect(raw).toEqual({
+          status: 'success',
+          input: { size },
+          result: { length: size },
+          steps: { make: 'x'.repeat(size), measure: { length: size } },
+        });
+        expect(JSON.stringify(raw).length).toBe(2_097_098);
       });
     } finally {
       await env.teardown();

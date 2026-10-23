@@ -22,7 +22,9 @@ export class TemporalExecutionEngine {
     };
     // Start and end times of the entries in `steps`, so `start()` can return Mastra step records.
     // Step inputs are left out: they would repeat step outputs and grow the result payload.
-    this.stepMeta = {};
+    // Recorded only when the start input asks for it: an execution started by an older client, or
+    // by startAsync(), keeps a result of the size it had, so one near the payload limit still completes.
+    this.stepMeta = params.recordStepMeta ? {} : undefined;
     let result = params.input;
     const stepResults = {};
 
@@ -36,14 +38,16 @@ export class TemporalExecutionEngine {
       result,
       state: params.initialState,
       steps: stepResults,
-      stepMeta: this.stepMeta,
+      ...(this.stepMeta && { stepMeta: this.stepMeta }),
     };
   }
 
   // Date.now() is the Workflow Task time, which replay reproduces from history.
   recordStep(stepResults, id, startedAt, output) {
     stepResults[id] = output;
-    this.stepMeta[id] = { startedAt, endedAt: Date.now() };
+    if (this.stepMeta) {
+      this.stepMeta[id] = { startedAt, endedAt: Date.now() };
+    }
   }
 
   activityParams(inputData, extra = {}) {
@@ -214,6 +218,7 @@ export function createWorkflow(workflowId, options) {
       },
       input: startArgs?.inputData,
       initialState: startArgs?.initialState,
+      recordStepMeta: startArgs?.recordStepMeta === true,
     });
   };
 
