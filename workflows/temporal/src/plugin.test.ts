@@ -7,6 +7,7 @@ import { BuildBundler } from './mastra-deployer';
 import { MastraPlugin } from './plugin';
 
 const tempDirs: string[] = [];
+const times = { startedAt: expect.any(Number), endedAt: expect.any(Number) };
 
 function moduleUrl(filePath: string): string {
   return `${pathToFileURL(filePath).href}?t=${Date.now()}-${Math.random()}`;
@@ -258,8 +259,11 @@ describe('Temporal prebuild integration', () => {
     const complexWorkflow = workflowModule.complexWorkflow;
     expect(complexWorkflow).toBeTypeOf('function');
 
-    const result = await (complexWorkflow as (args: { inputData: { input: string } }) => Promise<unknown>)({
+    const result = await (
+      complexWorkflow as (args: { inputData: { input: string }; recordStepMeta: boolean }) => Promise<unknown>
+    )({
       inputData: { input: 'test' },
+      recordStepMeta: true,
     });
 
     expect(result).toEqual({
@@ -274,7 +278,15 @@ describe('Temporal prebuild integration', () => {
         step3: { step3: 'test-step1-inner-step3' },
         step4: { result: 'test-step1-inner-step2|test-step1-inner-step3|final' },
       },
+      stepMeta: {
+        step1: times,
+        innerWorkflow: times,
+        step2: times,
+        step3: times,
+        step4: times,
+      },
     });
+    // Started without recordStepMeta, the generated Workflow returns no stepMeta.
     const mappedWorkflow = workflowModule.mappedWorkflow;
     expect(mappedWorkflow).toBeTypeOf('function');
     await expect(
