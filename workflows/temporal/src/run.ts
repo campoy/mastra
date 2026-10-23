@@ -7,18 +7,16 @@ import type { TemporalEngineType } from './types';
 import { toWorkflowType } from './utils';
 
 // Builds Mastra's step records. Results from Workers without `stepMeta` keep `steps: {}`
-// rather than records with made-up inputs and times.
+// rather than records with made-up times. Iterates `stepMeta` because a step that returned
+// undefined has no key in `steps` once the result is serialized.
 function toStepResults(input: unknown, { steps, stepMeta }: WorkflowExecutionResult): Record<string, unknown> {
   if (!stepMeta) {
     return {};
   }
 
   const records: Record<string, unknown> = { input };
-  for (const [stepId, output] of Object.entries(steps)) {
-    const meta = stepMeta[stepId];
-    if (meta) {
-      records[stepId] = { status: 'success', output, ...meta };
-    }
+  for (const [stepId, times] of Object.entries(stepMeta)) {
+    records[stepId] = { status: 'success', output: steps[stepId], ...times };
   }
   return records;
 }

@@ -50,8 +50,9 @@ describe('TemporalRun', () => {
       });
 
       await worker.runUntil(async () => {
-        // Preserve null and user outputs containing their own result field.
-        for (const output of [{ value: 6 }, null, { result: { value: 6 } }, 0, false, '']) {
+        // Preserve null and user outputs containing their own result field. A step that returns
+        // undefined still gets a record.
+        for (const output of [{ value: 6 }, null, { result: { value: 6 } }, 0, false, '', undefined]) {
           const initialState = { date: new Date('2026-10-20T00:00:00Z'), optional: undefined };
           const inputData = { ...initialState, output };
           const expected = await (await local.createRun()).start({ inputData, initialState });
@@ -64,11 +65,7 @@ describe('TemporalRun', () => {
             expect(actual.state).toStrictEqual(initialState);
             const record = { status: 'success', output, startedAt: expect.any(Number), endedAt: expect.any(Number) };
             expect(expected.steps).toMatchObject({ input: inputData, echo: record });
-            // The Temporal record also keeps the step input as the Activity received it.
-            expect(actual.steps).toEqual({
-              input: inputData,
-              echo: { ...record, payload: JSON.parse(JSON.stringify(inputData)) },
-            });
+            expect(actual.steps).toEqual({ input: inputData, echo: record });
           }
         }
       });

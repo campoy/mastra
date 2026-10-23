@@ -4,7 +4,7 @@ const executeChild = vi.fn();
 const proxyActivities = vi.fn();
 const sleep = vi.fn(async () => {});
 const logInfo = vi.fn();
-const meta = (payload: unknown) => ({ payload, startedAt: expect.any(Number), endedAt: expect.any(Number) });
+const times = { startedAt: expect.any(Number), endedAt: expect.any(Number) };
 
 vi.mock('@temporalio/workflow', () => ({
   executeChild,
@@ -57,7 +57,7 @@ describe('temporal workflow runtime helper module', () => {
         'fetch-weather': { city: 'SF', weather: 'sunny' },
       },
       stepMeta: {
-        'fetch-weather': meta({ city: 'SF' }),
+        'fetch-weather': times,
       },
     });
   });
@@ -96,7 +96,7 @@ describe('temporal workflow runtime helper module', () => {
         [mappingId]: { doubled: 42, initialValue: 21 },
       },
       stepMeta: {
-        [mappingId]: meta({ value: 21 }),
+        [mappingId]: times,
       },
     });
   });
@@ -179,7 +179,7 @@ describe('temporal workflow runtime helper module', () => {
         childWorkflow: { city: 'SF', child: true },
       },
       stepMeta: {
-        childWorkflow: meta({ city: 'SF' }),
+        childWorkflow: times,
       },
     });
   });
@@ -234,8 +234,8 @@ describe('temporal workflow runtime helper module', () => {
         second: { second: 3 },
       },
       stepMeta: {
-        first: meta({ value: 1 }),
-        second: meta({ value: 1 }),
+        first: times,
+        second: times,
       },
     });
   });
@@ -264,7 +264,7 @@ describe('temporal workflow runtime helper module', () => {
         childWorkflow: { value: 'child-output' },
       },
       stepMeta: {
-        childWorkflow: meta({ value: 'parent-input' }),
+        childWorkflow: times,
       },
     });
   });
@@ -334,7 +334,7 @@ describe('temporal workflow runtime helper module', () => {
         map: [{ value: 11 }, { value: 12 }, { value: 13 }],
       },
       stepMeta: {
-        map: meta(initData),
+        map: times,
       },
     });
   });
@@ -434,9 +434,8 @@ describe('temporal workflow runtime helper module', () => {
       steps: {
         incrementWhile: { value: 2 },
       },
-      // The last iteration's input.
       stepMeta: {
-        incrementWhile: meta({ value: 1 }),
+        incrementWhile: times,
       },
     });
     await expect(doUntilWorkflow({ inputData: { value: 0 } })).resolves.toMatchObject({

@@ -20,7 +20,8 @@ export class TemporalExecutionEngine {
       ...(params.resourceId !== undefined && { resourceId: params.resourceId }),
       workflowId: params.workflowId,
     };
-    // Inputs and times of the entries in `steps`, so `start()` can return Mastra step records.
+    // Start and end times of the entries in `steps`, so `start()` can return Mastra step records.
+    // Step inputs are left out: they would repeat step outputs and grow the result payload.
     this.stepMeta = {};
     let result = params.input;
     const stepResults = {};
@@ -40,9 +41,9 @@ export class TemporalExecutionEngine {
   }
 
   // Date.now() is the Workflow Task time, which replay reproduces from history.
-  recordStep(stepResults, id, payload, startedAt, output) {
+  recordStep(stepResults, id, startedAt, output) {
     stepResults[id] = output;
-    this.stepMeta[id] = { payload, startedAt, endedAt: Date.now() };
+    this.stepMeta[id] = { startedAt, endedAt: Date.now() };
   }
 
   activityParams(inputData, extra = {}) {
@@ -57,7 +58,7 @@ export class TemporalExecutionEngine {
         const out = await this.activityHandle[entry.step.id](
           this.activityParams(inputData, { initData: this.initData }),
         );
-        this.recordStep(stepResults, entry.step.id, inputData, startedAt, out);
+        this.recordStep(stepResults, entry.step.id, startedAt, out);
         return out;
       }
 
@@ -68,7 +69,7 @@ export class TemporalExecutionEngine {
           args: [{ inputData, ...this.executionContext }],
         });
         const out = childResult?.result ?? childResult;
-        this.recordStep(stepResults, entry.workflowType, inputData, startedAt, out);
+        this.recordStep(stepResults, entry.workflowType, startedAt, out);
         return out;
       }
 
@@ -76,7 +77,7 @@ export class TemporalExecutionEngine {
         log.info('mapping', { mappingId: entry.id });
         const startedAt = Date.now();
         const out = await this.activityHandle[entry.id](this.activityParams(inputData, { initData: this.initData }));
-        this.recordStep(stepResults, entry.id, inputData, startedAt, out);
+        this.recordStep(stepResults, entry.id, startedAt, out);
         return out;
       }
 
@@ -132,7 +133,7 @@ export class TemporalExecutionEngine {
             const startedAt = Date.now();
             const res = await this.activityHandle[stepId](this.activityParams(inputData, { initData: this.initData }));
             out[stepId] = res;
-            this.recordStep(stepResults, stepId, inputData, startedAt, res);
+            this.recordStep(stepResults, stepId, startedAt, res);
           }
         }
 
@@ -144,10 +145,9 @@ export class TemporalExecutionEngine {
         let current = inputData;
 
         while (true) {
-          const payload = current;
           const startedAt = Date.now();
           current = await this.activityHandle[entry.step.id](this.activityParams(current, { initData: this.initData }));
-          this.recordStep(stepResults, entry.step.id, payload, startedAt, current);
+          this.recordStep(stepResults, entry.step.id, startedAt, current);
           const shouldContinue = Boolean(
             await this.activityHandle[entry.serializedCondition.id](this.activityParams(current)),
           );
@@ -185,7 +185,7 @@ export class TemporalExecutionEngine {
         });
 
         await Promise.all(workers);
-        this.recordStep(stepResults, entry.step.id, inputData, startedAt, results);
+        this.recordStep(stepResults, entry.step.id, startedAt, results);
         return results;
       }
 

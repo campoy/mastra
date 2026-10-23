@@ -12,7 +12,7 @@ export interface WorkflowExecutionResult {
   state: unknown;
   steps: Record<string, unknown>;
   /** Missing from results of Workers older than this field. */
-  stepMeta?: Record<string, { payload: unknown; startedAt: number; endedAt: number }>;
+  stepMeta?: Record<string, { startedAt: number; endedAt: number }>;
 }
 
 export type StepEntry = {

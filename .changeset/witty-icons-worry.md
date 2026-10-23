@@ -4,7 +4,7 @@
 
 **Breaking:** `run.start()` on a Temporal workflow now returns the same result shape as a local Mastra run. Fixes #27934.
 
-Before, `result` held the whole Temporal workflow result, so the workflow output was one level deeper, and `steps` was always empty. Now `result` is the workflow output, and `steps` has a record for each step with its `status`, `payload` (the step input), `output`, `startedAt` and `endedAt`, plus the workflow `input`.
+Before, `result` held the whole Temporal workflow result, so the workflow output was one level deeper, and `steps` was always empty. Now `result` is the workflow output, and `steps` has a record for each step with its `status`, `output`, `startedAt` and `endedAt`, plus the workflow `input`.
 
 Before:
 

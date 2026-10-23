@@ -7,7 +7,7 @@ import { BuildBundler } from './mastra-deployer';
 import { MastraPlugin } from './plugin';
 
 const tempDirs: string[] = [];
-const meta = (payload: unknown) => ({ payload, startedAt: expect.any(Number), endedAt: expect.any(Number) });
+const times = { startedAt: expect.any(Number), endedAt: expect.any(Number) };
 
 function moduleUrl(filePath: string): string {
   return `${pathToFileURL(filePath).href}?t=${Date.now()}-${Math.random()}`;
@@ -276,11 +276,11 @@ describe('Temporal prebuild integration', () => {
         step4: { result: 'test-step1-inner-step2|test-step1-inner-step3|final' },
       },
       stepMeta: {
-        step1: meta({ input: 'test' }),
-        innerWorkflow: meta({ value: 'test-step1' }),
-        step2: meta({ value: 'test-step1-inner' }),
-        step3: meta({ value: 'test-step1-inner' }),
-        step4: meta({ step2: { step2: 'test-step1-inner-step2' }, step3: { step3: 'test-step1-inner-step3' } }),
+        step1: times,
+        innerWorkflow: times,
+        step2: times,
+        step3: times,
+        step4: times,
       },
     });
     const mappedWorkflow = workflowModule.mappedWorkflow;
@@ -298,7 +298,7 @@ describe('Temporal prebuild integration', () => {
         'mapping_mapped-workflow_0': { doubled: 42 },
       },
       stepMeta: {
-        'mapping_mapped-workflow_0': meta({ value: 21 }),
+        'mapping_mapped-workflow_0': times,
       },
     });
 
