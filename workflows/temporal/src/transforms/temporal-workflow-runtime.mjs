@@ -18,6 +18,8 @@ export class TemporalExecutionEngine {
       ...(params.requestContext !== undefined && { requestContext: params.requestContext }),
       ...(params.runId !== undefined && { runId: params.runId }),
       ...(params.resourceId !== undefined && { resourceId: params.resourceId }),
+      // The run's validateInputs setting; the plugin checks step inputs only when it is true.
+      ...(params.validateInputs !== undefined && { validateInputs: params.validateInputs }),
       workflowId: params.workflowId,
     };
     let result = params.input;
@@ -192,6 +194,7 @@ export function createWorkflow(workflowId, options) {
       runId: startArgs?.runId,
       resourceId: startArgs?.resourceId,
       requestContext: startArgs?.requestContext,
+      validateInputs: startArgs?.validateInputs,
       graph: {
         id: workflowId,
         steps: stepFlow,

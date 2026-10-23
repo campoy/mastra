@@ -14,12 +14,15 @@ function withRequestContext(params) {
   };
 }
 function createStep(args) {
-  return async params => {
+  // MastraPlugin checks the input against the step's schema before it runs the step.
+  return Object.assign(async params => {
     return args.execute({
       ...withRequestContext(params),
       mastra
     });
-  };
+  }, {
+    inputSchema: args.inputSchema
+  });
 }
 const mastra = {
   marker: 'ok'

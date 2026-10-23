@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { toStandardSchema } from '@mastra/core/schema';
+import type { PublicSchema } from '@mastra/core/schema';
+import { validateStepInput } from '@mastra/core/workflows';
+import { ApplicationFailure } from '@temporalio/activity';
 import type { WorkerOptions, WorkerPlugin } from '@temporalio/worker';
 import type { TemporalActivityBinding } from './transforms/activities';
 import { buildTemporalActivitiesModule } from './transforms/activities';
@@ -22,6 +26,36 @@ function getGeneratedActivitiesModulePath(outputDir: string): string {
 
 function getActivityBindingsPath(outputDir: string): string {
   return path.join(outputDir, ACTIVITY_BINDINGS_FILE_NAME);
+}
+
+type StepParams = { inputData?: unknown; validateInputs?: boolean } & Record<string, unknown>;
+
+/**
+ * Checks a step's input against its inputSchema before the step runs, as Mastra's
+ * validateStepInput does, and passes the parsed value on. The Workflow sends the run's
+ * validateInputs setting; runs started without it keep running steps unchecked.
+ * Retrying cannot fix the input, so a mismatch fails the Activity without retries.
+ */
+async function checkStepInput(inputSchema: unknown, params: StepParams): Promise<StepParams> {
+  const { validateInputs, ...rest } = params;
+  if (validateInputs !== true || !inputSchema) {
+    return rest;
+  }
+
+  const { inputData, validationError } = await validateStepInput({
+    prevOutput: rest.inputData,
+    step: { inputSchema: toStandardSchema(inputSchema as PublicSchema) },
+    validateInputs: true,
+  });
+  if (validationError) {
+    throw ApplicationFailure.create({
+      type: 'WORKFLOW_STEP_INPUT_VALIDATION_FAILED',
+      message: validationError.message,
+      nonRetryable: true,
+      cause: validationError,
+    });
+  }
+  return { ...rest, inputData };
 }
 
 export class MastraPlugin implements WorkerPlugin {
@@ -122,6 +156,11 @@ export class MastraPlugin implements WorkerPlugin {
           throw new Error(`Unable to load activity '${binding.exportName}' from ${compiledActivitiesPath}`);
         }
 
+        const [params, ...rest] = args;
+        if (params && typeof params === 'object') {
+          const { inputSchema } = activity as { inputSchema?: unknown };
+          return activity(await checkStepInput(inputSchema, params as StepParams), ...rest);
+        }
         return activity(...args);
       };
     }

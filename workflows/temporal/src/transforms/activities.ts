@@ -370,25 +370,28 @@ function createTemporalActivitiesHelperStatements(
       mastraImportPath
         ? `
           function createStep(args) {
-            return async (params) => {
+            // MastraPlugin checks the input against the step's schema before it runs the step.
+            return Object.assign(async (params) => {
               const { mastra } = await import(${JSON.stringify(mastraImportPath)});
               return args.execute({ ...withRequestContext(params), mastra });
-            };
+            }, { inputSchema: args.inputSchema });
           }
         `
         : hasMastraBinding
           ? `
             function createStep(args) {
-              return async (params) => {
+              // MastraPlugin checks the input against the step's schema before it runs the step.
+              return Object.assign(async (params) => {
                 return args.execute({ ...withRequestContext(params), mastra });
-              };
+              }, { inputSchema: args.inputSchema });
             }
           `
           : `
             function createStep(args) {
-              return async (params) => {
+              // MastraPlugin checks the input against the step's schema before it runs the step.
+              return Object.assign(async (params) => {
                 return args.execute(withRequestContext(params));
-              };
+              }, { inputSchema: args.inputSchema });
             }
           `
     }

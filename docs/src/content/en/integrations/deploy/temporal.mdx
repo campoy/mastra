@@ -97,6 +97,8 @@ const incrementStep = createStep({
 })
 ```
 
+A step checks its input against its `inputSchema` before it runs, as in a local run, unless the workflow sets `options: { validateInputs: false }`. Step input passes through Temporal's data converter, which turns a `Date` into a string, so use `z.coerce.date()` for dates in a step's `inputSchema`.
+
 ### Creating the workflow
 
 Compose the steps into a workflow. The workflow `id` must be a static string literal so the build-time transformer can derive its Temporal export name.

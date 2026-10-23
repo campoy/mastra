@@ -30,6 +30,7 @@ export type WorkflowRuntime = ((startArgs?: {
   resourceId?: string;
   inputData?: unknown;
   initialState?: unknown;
+  validateInputs?: boolean;
 }) => Promise<WorkflowExecutionResult>) & {
   then(stepId: string): WorkflowRuntime;
   thenWorkflow(workflowType: string): WorkflowRuntime;
@@ -53,6 +54,7 @@ export class TemporalExecutionEngine {
     workflowId: string;
     runId?: string;
     resourceId?: string;
+    validateInputs?: boolean;
     graph: { id: string; steps: unknown[] };
     input?: unknown;
     initialState?: unknown;

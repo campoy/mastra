@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApplicationFailure } from '@temporalio/activity';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { BuildBundler } from './mastra-deployer';
 import { MastraPlugin } from './plugin';
 import { buildTemporalActivitiesModule } from './transforms/activities';
@@ -444,5 +445,60 @@ describe('@mastra/temporal configureWorker activities', () => {
     });
     expect(activitiesModule).toContain('const mastra = {');
     expect(activitiesModule).not.toContain("await import('./activities.mjs')");
+  });
+
+  it('checks a step input against its inputSchema before the step runs, as a local run does', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'mastra-temporal-plugin-'));
+    const entryPath = path.join(tempDir, 'src', 'index.ts');
+    const compiledEntrySource = `
+      import { createWorkflow, createStep } from '@mastra/core/workflows';
+      import { z } from 'zod';
+
+      const increment = createStep({
+        id: 'increment',
+        inputSchema: z.object({ value: z.number(), note: z.string().trim().default('none') }),
+        execute: async ({ inputData }) => inputData,
+      });
+
+      // An application binding that shares a name an injected helper could use.
+      const withInputSchema = value => value + 1;
+      const bump = createStep({
+        id: 'bump',
+        inputSchema: z.object({ value: z.number() }),
+        execute: async ({ inputData }) => ({ value: withInputSchema(inputData.value) }),
+      });
+
+      export const incrementWorkflow = createWorkflow({ id: 'increment-workflow' }).then(increment).then(bump);
+    `;
+    mockCompiledBundle({ compiledEntrySource, compiledWorkflowSource: 'export const unused = true;' });
+    // A project root of its own, so this activities module is not the one earlier tests imported.
+    // It sits in the package, where zod and @mastra/core resolve.
+    const projectRoot = await mkdtemp(path.join(packageRoot, '.step-input-'));
+    onTestFinished(() => rm(projectRoot, { recursive: true, force: true }));
+
+    const workerOptions = await new MastraPlugin(entryPath, projectRoot).configureWorker({
+      taskQueue: 'mastra',
+    } as any);
+    const { increment, bump } = workerOptions.activities as Record<string, (...args: any[]) => Promise<unknown>>;
+
+    // The step gets the parsed input, with the schema's transform and default applied.
+    await expect(increment({ inputData: { value: 5, note: ' hi ' }, validateInputs: true })).resolves.toEqual({
+      value: 5,
+      note: 'hi',
+    });
+    await expect(increment({ inputData: { value: 5 }, validateInputs: true })).resolves.toEqual({
+      value: 5,
+      note: 'none',
+    });
+    // A mismatch fails the step without retries, since a retry gets the same input.
+    const error = await increment({ inputData: { value: '5' }, validateInputs: true }).catch(e => e);
+    expect(error).toBeInstanceOf(ApplicationFailure);
+    expect(error).toMatchObject({ type: 'WORKFLOW_STEP_INPUT_VALIDATION_FAILED', nonRetryable: true });
+    expect(error.message).toContain('Step input validation failed');
+    // validateInputs: false, and runs started before the Workflow sent the setting, skip the check.
+    await expect(increment({ inputData: { value: '5' }, validateInputs: false })).resolves.toEqual({ value: '5' });
+    await expect(increment({ inputData: { value: '5' } })).resolves.toEqual({ value: '5' });
+    // The application's own withInputSchema still runs inside its step.
+    await expect(bump({ inputData: { value: 5 }, validateInputs: true })).resolves.toEqual({ value: 6 });
   });
 });
